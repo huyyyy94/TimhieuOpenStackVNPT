@@ -794,4 +794,562 @@ Toàn bộ quá trình có thể tóm tắt:
 
 ---
 
+# 6. Quan hệ và giao tiếp giữa các OpenStack Service
+
+OpenStack không phải là một ứng dụng đơn lẻ. Hệ thống gồm nhiều service chạy trên các process khác nhau và cần giao tiếp với nhau để hoàn thành một request.
+
+Có ba cơ chế quan trọng cần phân biệt:
+
+- API communication
+- Message Queue
+- Database
+
+Ngoài ra, Keystone đóng vai trò Identity Service và cung cấp Service Catalog để các client/service biết cách tìm đến các OpenStack API.
+
+---
+
+## 6.1. API Communication
+
+Các OpenStack service cung cấp API để client hoặc service khác gửi request.
+
+Ví dụ:
+
+```text
+OpenStack CLI
+      |
+      v
+Nova API
+      |
+      v
+Nova Service
+```
+
+Hoặc:
+
+```text
+Horizon
+   |
+   v
+OpenStack API
+   |
+   +---- Keystone
+   +---- Nova
+   +---- Neutron
+   +---- Glance
+   +---- Placement
+```
+
+API là cơ chế giao tiếp ở tầng service.
+
+Thông qua API, client có thể yêu cầu OpenStack thực hiện các thao tác như:
+
+- Create Instance
+- Delete Instance
+- Create Network
+- Create Subnet
+- Upload Image
+- Create Volume
+- List Resource
+
+---
+
+## 6.2. Keystone trong quá trình giao tiếp
+
+Keystone không phải message broker và cũng không phải database.
+
+Keystone chịu trách nhiệm về Identity.
+
+Ví dụ User muốn gọi Nova API:
+
+```text
+User
+  |
+  | Credentials
+  v
+Keystone
+  |
+  | Token
+  v
+Nova API
+```
+
+Nova sử dụng thông tin authentication để xác định:
+
+- User là ai
+- Project nào
+- Scope của request
+- User có quyền thực hiện request hay không
+
+Do đó Keystone là một thành phần nền tảng trong quá trình giao tiếp với OpenStack API.
+
+---
+
+## 6.3. Service Catalog
+
+Keystone còn cung cấp Service Catalog.
+
+Service Catalog chứa thông tin về các OpenStack service và endpoint tương ứng.
+
+Ví dụ:
+
+```text
+Service Catalog
+|
++-- Keystone
+|    |
+|    +-- Endpoint
+|
++-- Nova
+|    |
+|    +-- Endpoint
+|
++-- Glance
+|    |
+|    +-- Endpoint
+|
++-- Neutron
+|    |
+|    +-- Endpoint
+|
++-- Placement
+     |
+     +-- Endpoint
+```
+
+Khi OpenStack client cần gọi một service, client có thể sử dụng Service Catalog để xác định endpoint của service đó.
+
+---
+
+# 6.4. Message Queue
+
+OpenStack có nhiều process và service chạy phân tán.
+
+Không phải mọi thành phần đều giao tiếp trực tiếp với nhau bằng HTTP API.
+
+Một số thành phần sử dụng Message Queue để trao đổi message.
+
+Trong deployment phổ biến, RabbitMQ được sử dụng làm Message Broker.
+
+Ví dụ:
+
+```text
+Nova API
+   |
+   | Message
+   v
+RabbitMQ
+   |
+   v
+Nova Scheduler / Nova Compute
+```
+
+Message Queue giúp các process trao đổi công việc mà không cần tất cả thành phần phải gọi trực tiếp lẫn nhau.
+
+---
+
+## 6.5. RabbitMQ
+
+RabbitMQ là Message Broker.
+
+Vai trò chính:
+
+- Nhận message
+- Queue message
+- Chuyển message tới consumer
+- Hỗ trợ giao tiếp giữa các process/service
+
+Có thể hình dung:
+
+```text
+Producer
+   |
+   v
+RabbitMQ
+   |
+   v
+Consumer
+```
+
+Trong OpenStack:
+
+```text
+Nova API
+   |
+   v
+RabbitMQ
+   |
+   v
+Nova Compute
+```
+
+RabbitMQ không phải database.
+
+RabbitMQ cũng không phải nơi lưu trữ image hoặc VM.
+
+Nó chủ yếu đảm nhiệm việc truyền message giữa các process.
+
+---
+
+# 6.6. Database
+
+Các OpenStack service cần database để lưu trữ state và metadata.
+
+Trong mô hình lab, MariaDB được sử dụng làm database backend.
+
+Ví dụ:
+
+```text
+MariaDB
+|
++-- Keystone DB
++-- Nova DB
++-- Neutron DB
++-- Glance DB
++-- Placement DB
+```
+
+Mỗi service có thể sử dụng database/schema riêng tùy kiến trúc triển khai.
+
+---
+
+## 6.7. MariaDB
+
+MariaDB là relational database.
+
+Database được sử dụng để lưu các thông tin cần thiết cho hoạt động của service.
+
+Ví dụ:
+
+```text
+Keystone
+   |
+   v
+MariaDB
+   |
+   +-- Identity information
+
+Nova
+   |
+   v
+MariaDB
+   |
+   +-- Compute related information
+
+Neutron
+   |
+   v
+MariaDB
+   |
+   +-- Network related information
+```
+
+Database không phải nơi VM thực sự chạy.
+
+VM chạy trên Compute Node thông qua QEMU/KVM.
+
+---
+
+# 6.8. API và Message Queue khác nhau như thế nào?
+
+Đây là điểm rất dễ nhầm khi mới học OpenStack.
+
+### API
+
+API thường được sử dụng khi một client hoặc service cần gửi request tới một service.
+
+Ví dụ:
+
+```text
+User
+  |
+  | HTTP Request
+  v
+Nova API
+```
+
+### Message Queue
+
+Message Queue được sử dụng để các process/service trao đổi message và công việc thông qua broker.
+
+Ví dụ:
+
+```text
+Nova API
+   |
+   | Message
+   v
+RabbitMQ
+   |
+   v
+Nova Compute
+```
+
+Có thể nhớ:
+
+> API = gửi request tới service.
+
+> Message Queue = truyền message giữa các process/service.
+
+---
+
+# 6.9. API, Message Queue và Database
+
+Ba thành phần này có vai trò khác nhau:
+
+| Thành phần | Vai trò |
+|---|---|
+| API | Interface để client/service gửi request |
+| RabbitMQ | Message broker giữa các process/service |
+| MariaDB | Lưu trữ database/state |
+| Keystone | Identity, Authentication, Authorization và Service Catalog |
+
+Có thể hình dung:
+
+```text
+                    User
+                      |
+                      v
+                  Keystone
+                      |
+                   Token
+                      |
+                      v
+                 OpenStack API
+                      |
+          +-----------+-----------+
+          |                       |
+          v                       v
+      Message Queue            Database
+       RabbitMQ                MariaDB
+          |                       |
+          v                       v
+      OpenStack              Service State
+       Processes
+```
+
+---
+
+# 6.10. Ví dụ: Nova API và Nova Compute
+
+Khi User tạo Instance, Nova API nhận request.
+
+Nova API không trực tiếp chạy VM.
+
+Một phần công việc được điều phối tới các thành phần Nova khác.
+
+Có thể khái quát:
+
+```text
+User
+  |
+  v
+Nova API
+  |
+  v
+Nova Scheduler
+  |
+  v
+Selected Compute Node
+  |
+  v
+Nova Compute
+```
+
+Message Queue có thể được sử dụng để các process Nova trao đổi message.
+
+Sau đó Nova Compute thực hiện việc quản lý Instance trên Compute Node.
+
+---
+
+# 6.11. Ví dụ: Nova và Placement
+
+Nova Scheduler cần biết Compute Node nào có tài nguyên phù hợp.
+
+Placement cung cấp thông tin về resource provider và allocation.
+
+```text
+Nova Scheduler
+      |
+      | Resource query
+      v
+Placement
+      |
+      v
+Resource Information
+      |
+      v
+Nova Scheduler
+```
+
+Scheduler sử dụng thông tin này cùng với các filter, weigher và policy để lựa chọn Compute Node.
+
+---
+
+# 6.12. Ví dụ: Nova và Glance
+
+Nova cần image để tạo Instance.
+
+Glance quản lý image.
+
+```text
+Nova
+  |
+  | Image request
+  v
+Glance
+  |
+  v
+Image
+```
+
+Nova sử dụng image đó trong quá trình tạo Instance.
+
+---
+
+# 6.13. Ví dụ: Nova và Neutron
+
+Instance cần networking.
+
+Nova phối hợp với Neutron để Instance có network resource phù hợp.
+
+```text
+Nova
+  |
+  | Network request
+  v
+Neutron
+  |
+  +-- Network
+  +-- Subnet
+  +-- Port
+  +-- Security Group
+  |
+  v
+Instance Networking
+```
+
+Neutron chịu trách nhiệm phần networking.
+
+Nova chịu trách nhiệm phần compute/lifecycle của Instance.
+
+---
+
+# 6.14. Tổng thể giao tiếp giữa các Service
+
+Có thể hình dung một request tạo Instance như sau:
+
+```text
+                         User
+                           |
+                           v
+                    Horizon / CLI
+                           |
+                           v
+                       Keystone
+                           |
+                         Token
+                           |
+                           v
+                       Nova API
+                           |
+             +-------------+-------------+
+             |             |             |
+             v             v             v
+        Placement       Glance        Neutron
+             |             |             |
+             |             |             |
+             +-------------+-------------+
+                           |
+                           v
+                    Nova Scheduler
+                           |
+                           v
+                    Compute Node
+                           |
+                      Nova Compute
+                           |
+                        Libvirt
+                           |
+                       QEMU / KVM
+                           |
+                           v
+                        Instance
+```
+
+Trong quá trình này:
+
+```text
+MariaDB
+   |
+   +---- Service databases
+
+RabbitMQ
+   |
+   +---- Message communication
+```
+
+Keystone cung cấp Identity và Service Catalog cho toàn bộ hệ thống.
+
+---
+
+# 6.15. Control Plane Communication
+
+Control Plane bao gồm các thành phần quản lý và điều phối.
+
+Ví dụ:
+
+```text
+                 Controller
+                     |
+       +-------------+-------------+
+       |             |             |
+       v             v             v
+   Keystone        Nova         Neutron
+       |             |             |
+       +-------------+-------------+
+                     |
+              RabbitMQ / MariaDB
+```
+
+Các service trên Controller xử lý request và điều phối hoạt động của hệ thống.
+
+---
+
+# 6.16. Data Plane
+
+Data Plane là nơi workload thực tế chạy.
+
+Ví dụ:
+
+```text
+              Compute Node
+                    |
+              Nova Compute
+                    |
+                 Libvirt
+                    |
+                QEMU/KVM
+                    |
+                    v
+                 Instance
+```
+
+Neutron cũng có các thành phần thực hiện networking trên các node tùy theo backend được lựa chọn.
+
+Do đó:
+
+```text
+Control Plane
+    |
+    | Điều khiển
+    v
+Data Plane
+    |
+    +-- Compute
+    +-- Network
+    +-- Storage
+```
+
+---
+
 
