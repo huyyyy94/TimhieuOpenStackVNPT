@@ -1,11 +1,11 @@
 # MariaDB
 
-## 1. Mục đích
+## Mục đích
 
 MariaDB được sử dụng làm SQL database backend
 cho các OpenStack services.
 
-## 2. Mô hình triển khai
+## Mô hình triển khai
 
 MariaDB được triển khai trên Controller Node.
 
